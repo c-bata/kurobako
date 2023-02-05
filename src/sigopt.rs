@@ -18,6 +18,7 @@ use kurobako_core::trial::{Params, Values};
 use kurobako_core::{ErrorKind, Result};
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
+use pyo3::prelude::*;
 
 mod bessel;
 mod functions;
@@ -25,6 +26,7 @@ mod functions;
 /// Recipe of `SigoptProblem`.
 #[derive(Debug, Clone, StructOpt, Serialize, Deserialize)]
 #[structopt(rename_all = "kebab-case")]
+#[pyclass]
 pub struct SigoptProblemRecipe {
     /// Test function name.
     #[structopt(subcommand)]
@@ -66,6 +68,7 @@ impl ProblemRecipe for SigoptProblemRecipe {
 
 /// Factory of `SigoptProblem`.
 #[derive(Debug)]
+#[pyclass]
 pub struct SigoptProblemFactory {
     name: Name,
     dim: usize,
@@ -124,6 +127,7 @@ impl ProblemFactory for SigoptProblemFactory {
 
 /// Problem that uses the test functions defined in [sigopt/evalset](https://github.com/sigopt/evalset).
 #[derive(Debug)]
+#[pyclass]
 pub struct SigoptProblem {
     name: Name,
     res: Option<f64>,
@@ -142,6 +146,7 @@ impl Problem for SigoptProblem {
 
 /// Evaluator of `SigoptProblem`.
 #[derive(Debug)]
+#[pyclass]
 pub struct SigoptEvaluator {
     res: Option<f64>,
     test_function: Box<dyn TestFunction>,
@@ -167,6 +172,7 @@ impl Evaluator for SigoptEvaluator {
 #[allow(missing_docs)]
 #[structopt(rename_all = "kebab-case")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum Name {
     Ackley,
     Adjiman,

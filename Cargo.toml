@@ -2,19 +2,21 @@
 name = "kurobako_problems"
 version = "0.1.13"
 authors = ["Takeru Ohta <phjgt308@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "A collection of black-box optimization problems"
 homepage = "https://github.com/optuna/kurobako"
 repository = "https://github.com/optuna/kurobako"
 readme = "README.md"
 license = "MIT"
 
-[badges]
-coveralls = {repository = "optuna/kurobako"}
+[lib]
+name = "kurobako_problems"
+crate-type = ["cdylib"]
 
 [dependencies]
+pyo3 = { version = "0.18.0", features = ["extension-module"] }
 hdf5file = "0.1"
-kurobako_core = { path = "../kurobako_core/", version = "0.1" }
+kurobako_core = "0.1.12"
 lazy_static = "1"
 nasbench = "0.1"
 randomforest = "0.1.2"
