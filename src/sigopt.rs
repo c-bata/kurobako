@@ -16,9 +16,9 @@ use kurobako_core::registry::FactoryRegistry;
 use kurobako_core::rng::ArcRng;
 use kurobako_core::trial::{Params, Values};
 use kurobako_core::{ErrorKind, Result};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
-use pyo3::prelude::*;
 
 mod bessel;
 mod functions;
@@ -74,6 +74,18 @@ pub struct SigoptProblemFactory {
     dim: usize,
     res: Option<f64>,
     int: Vec<usize>,
+}
+#[pymethods]
+impl SigoptProblemFactory {
+    #[new]
+    fn py_new() -> Self {
+        Self {
+            name: Name::Ackley,
+            dim: 4,
+            res: None,
+            int: vec![],
+        }
+    }
 }
 impl ProblemFactory for SigoptProblemFactory {
     type Problem = SigoptProblem;
