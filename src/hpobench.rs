@@ -10,6 +10,8 @@ use kurobako_core::registry::FactoryRegistry;
 use kurobako_core::rng::{ArcRng, Rng};
 use kurobako_core::trial::{Params, Values};
 use kurobako_core::{Error, ErrorKind, Result};
+use pyo3::exceptions;
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::f64;
 use std::path::PathBuf;
@@ -20,9 +22,31 @@ use trackable::error::ErrorKindExt as _;
 /// Recipe of `HpobenchProblem`.
 #[derive(Debug, Clone, StructOpt, Serialize, Deserialize)]
 #[structopt(rename_all = "kebab-case")]
+#[pyclass]
 pub struct HpobenchProblemRecipe {
     /// Path of the FC-Net dataset.
     pub dataset: PathBuf,
+}
+#[pymethods]
+impl HpobenchProblemRecipe {
+    #[new]
+    fn py_new(path: &str) -> Self {
+        Self {
+            dataset: PathBuf::from(path),
+        }
+    }
+
+    /// Create `HpobenchProblemFactory`.
+    pub fn create_factory(&self) -> PyResult<HpobenchProblemFactory> {
+        let file = match track!(Hdf5File::open_file(&self.dataset).map_err(into_error)) {
+            Ok(f) => f,
+            Err(e) => return Err(exceptions::PyIOError::new_err(e.to_string())),
+        };
+        Ok(HpobenchProblemFactory {
+            file: Arc::new(Mutex::new(file)),
+            path: self.dataset.clone(),
+        })
+    }
 }
 impl ProblemRecipe for HpobenchProblemRecipe {
     type Factory = HpobenchProblemFactory;
@@ -38,9 +62,21 @@ impl ProblemRecipe for HpobenchProblemRecipe {
 
 /// Factory of `HpobenchProblem`.
 #[derive(Debug)]
+#[pyclass]
 pub struct HpobenchProblemFactory {
     file: Arc<Mutex<Hdf5File>>,
     path: PathBuf,
+}
+#[pymethods]
+impl HpobenchProblemFactory {
+    /// Create `HpobenchProblem`.
+    pub fn create_problem(&self, seed: u64) -> PyResult<HpobenchProblem> {
+        let rng = ArcRng::new(seed);
+        Ok(HpobenchProblem {
+            file: Arc::clone(&self.file),
+            rng,
+        })
+    }
 }
 impl ProblemFactory for HpobenchProblemFactory {
     type Problem = HpobenchProblem;
@@ -95,9 +131,42 @@ impl ProblemFactory for HpobenchProblemFactory {
 
 /// FC-Net problem.
 #[derive(Debug)]
+#[pyclass]
 pub struct HpobenchProblem {
     file: Arc<Mutex<Hdf5File>>,
     rng: ArcRng,
+}
+#[pymethods]
+impl HpobenchProblem {
+    /// Create `HpobenchEvaluator`.
+    pub fn create_evaluator(&self, param_values: Vec<f64>) -> PyResult<HpobenchEvaluator> {
+        let params = Params::new(param_values);
+        const UNITS: [usize; 6] = [16, 32, 64, 128, 256, 512];
+        const DROPOUTS: [&str; 3] = ["0.0", "0.3", "0.6"];
+
+        let key = format!(
+            r#"{{"activation_fn_1": {:?}, "activation_fn_2": {:?}, "batch_size": {}, "dropout_1": {}, "dropout_2": {}, "init_lr": {}, "lr_schedule": {:?}, "n_units_1": {}, "n_units_2": {}}}"#,
+            (["tanh", "relu"])[params[0] as usize],
+            (["tanh", "relu"])[params[1] as usize],
+            ([8, 16, 32, 64])[params[2] as usize],
+            DROPOUTS[params[3] as usize],
+            DROPOUTS[params[4] as usize],
+            ([5.0 * 1e-4, 1e-3, 5.0 * 1e-3, 1e-2, 5.0 * 1e-2, 1e-1])[params[5] as usize],
+            (["cosine", "const"])[params[6] as usize],
+            UNITS[params[7] as usize],
+            UNITS[params[8] as usize]
+        );
+
+        let sample_index = match track!(self.rng.with_lock(|rng| rng.gen::<usize>() % 4)) {
+            Ok(i) => i,
+            Err(e) => return Err(exceptions::PyException::new_err(e.to_string())),
+        };
+        Ok(HpobenchEvaluator {
+            file: Arc::clone(&self.file),
+            key: format!("/{}/valid_mse", key),
+            sample_index,
+        })
+    }
 }
 impl Problem for HpobenchProblem {
     type Evaluator = HpobenchEvaluator;
@@ -130,10 +199,33 @@ impl Problem for HpobenchProblem {
 
 /// Evaluator of `HpobenchProblem`.
 #[derive(Debug)]
+#[pyclass]
 pub struct HpobenchEvaluator {
     file: Arc<Mutex<Hdf5File>>,
     key: String,
     sample_index: usize,
+}
+#[pymethods]
+impl HpobenchEvaluator {
+    /// Evaluate params.
+    pub fn evaluate(&mut self, next_step: u64) -> PyResult<(u64, Vec<f64>)> {
+        let mut file = match track!(self.file.lock().map_err(Error::from)) {
+            Ok(file) => file,
+            Err(e) => return Err(exceptions::PyException::new_err(e.to_string())),
+        };
+        let data = match track!(file.get_object(&self.key).map_err(into_error)) {
+            Ok(data) => data,
+            Err(e) => return Err(exceptions::PyException::new_err(e.to_string())),
+        };
+        // let DataObject::Float(data) = track_assert_some!(data, ErrorKind::InvalidInput; self.key);
+        let DataObject::Float(data) = match data {
+            Some(d) => d,
+            None => return Err(exceptions::PyException::new_err("invalid file")),
+        };
+
+        let value = data[[self.sample_index, next_step as usize - 1]];
+        Ok((next_step, vec![value]))
+    }
 }
 impl Evaluator for HpobenchEvaluator {
     fn evaluate(&mut self, next_step: u64) -> Result<(u64, Values)> {

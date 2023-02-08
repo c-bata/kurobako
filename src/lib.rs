@@ -19,5 +19,9 @@ fn kurobako_problems(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<sigopt::SigoptProblem>()?;
     m.add_class::<sigopt::SigoptProblemFactory>()?;
     m.add_class::<sigopt::SigoptProblemRecipe>()?;
+    m.add_class::<hpobench::HpobenchEvaluator>()?;
+    m.add_class::<hpobench::HpobenchProblem>()?;
+    m.add_class::<hpobench::HpobenchProblemFactory>()?;
+    m.add_class::<hpobench::HpobenchProblemRecipe>()?;
     Ok(())
 }
